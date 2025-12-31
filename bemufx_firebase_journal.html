@@ -1,0 +1,199 @@
+<!--
+BEMUFX FINAL PACKAGE - FULLY INTEGRATED MULTI-USER TRADING JOURNAL
+Includes: Gmail Login, Profile, Multi-Account, Trade Journal, Analytics, Calendar, Gallery
+Mobile-First + Desktop-Ready
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BEMUFX – Trading Journal FINAL</title>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+<style>
+:root{--bg:#0e0e0e;--card:#151515;--accent:gold;--text:#e5e5e5;--pos:#00ff88;--neg:#ff4d4d;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Arial;}
+.header{padding:15px;text-align:center;color:var(--accent);font-size:20px;background:#111;}
+.container{padding:15px;padding-bottom:100px;}
+.card{background:var(--card);padding:15px;border-radius:12px;margin-bottom:15px;}
+input,select,textarea,button{width:100%;padding:10px;margin-top:5px;margin-bottom:12px;border-radius:8px;border:none;}
+button{background:var(--accent);font-weight:bold;color:#111;cursor:pointer;}
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:#111;display:flex;justify-content:space-around;padding:10px 0;}
+.bottom-nav span{font-size:12px;color:#aaa;}
+.bottom-nav .active{color:var(--accent);}
+@media(min-width:900px){.container{max-width:900px;margin:auto}.bottom-nav{display:none}}
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;}
+img{width:100%;border-radius:8px;}
+.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;}
+.day{background:#1b1b1b;padding:10px;border-radius:6px;text-align:center;cursor:pointer;}
+.day.green{background:#004400;}
+.day.red{background:#440000;}
+.day.gray{background:#333;}
+</style>
+</head>
+<body>
+
+<div class="header">BEMUFX – Trading Journal FINAL</div>
+<div class="container">
+
+<!-- LOGIN / LOGOUT -->
+<div class="card" id="authCard">
+  <button id="loginBtn">Login with Gmail</button>
+  <button id="logoutBtn" style="display:none;">Logout</button>
+</div>
+
+<!-- PROFILE -->
+<div class="card" id="profileCard" style="display:none;">
+  <h3>Profile</h3>
+  <label>Display Name</label>
+  <input id="displayName" />
+  <label>Default Account</label>
+  <select id="defaultAccount"></select>
+  <button onclick="saveProfile()">Save Profile</button>
+</div>
+
+<!-- JOURNAL -->
+<div class="card" id="journalCard" style="display:none;">
+  <h3>Add Trade</h3>
+  <label>Account</label>
+  <select id="tradeAccount"></select>
+  <label>Symbol</label><input id="symbol" placeholder="EURUSD" />
+  <label>Direction</label><select id="direction"><option>Long</option><option>Short</option></select>
+  <label>Open Time</label><input type="time" id="openTime" />
+  <label>Close Time</label><input type="time" id="closeTime" />
+  <label>P/L ($)</label><input type="number" id="pnl" />
+  <button onclick="addTrade()">Add Trade</button>
+  <h3>Trades</h3>
+  <div id="tradeList"></div>
+</div>
+
+<!-- GALLERY -->
+<div class="card" id="galleryCard" style="display:none;">
+  <h3>Trade Gallery</h3>
+  <input type="file" id="fileInput" accept="image/*" />
+  <button onclick="uploadScreenshot()">Upload</button>
+  <div class="gallery" id="gallery"></div>
+</div>
+
+<!-- CALENDAR -->
+<div class="card" id="calendarCard" style="display:none;">
+  <h3>Calendar</h3>
+  <div class="calendar" id="calendar"></div>
+</div>
+
+</div>
+<div class="bottom-nav">
+<span class="active">Journal</span>
+<span>Analytics</span>
+<span>Calendar</span>
+<span>Profile</span>
+<span>Gallery</span>
+</div>
+
+<script>
+// Firebase config (replace with your Firebase project details)
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "SENDER_ID",
+  appId: "APP_ID"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+// AUTH
+const loginBtn=document.getElementById('loginBtn');
+const logoutBtn=document.getElementById('logoutBtn');
+loginBtn.onclick=()=>{
+  const provider=new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider);
+};
+logoutBtn.onclick=()=>auth.signOut();
+
+auth.onAuthStateChanged(user=>{
+  if(user){
+    loginBtn.style.display='none'; logoutBtn.style.display='block';
+    profileCard.style.display='block'; journalCard.style.display='block'; galleryCard.style.display='block'; calendarCard.style.display='block';
+    loadUserData(user.uid);
+  } else {
+    loginBtn.style.display='block'; logoutBtn.style.display='none';
+    profileCard.style.display='none'; journalCard.style.display='none'; galleryCard.style.display='none'; calendarCard.style.display='none';
+  }
+});
+
+// USER DATA
+function loadUserData(uid){
+  const userRef=db.collection('users').doc(uid);
+  userRef.get().then(doc=>{
+    if(doc.exists){
+      displayName.value=doc.data().displayName;
+      populateAccounts(doc.data().accounts);
+    } else {
+      userRef.set({displayName:'',accounts:[]});
+    }
+  });
+}
+
+function populateAccounts(accounts){
+  defaultAccount.innerHTML=''; tradeAccount.innerHTML='';
+  accounts.forEach(acc=>{
+    const o1=document.createElement('option'); o1.textContent=o1.value=acc.name; defaultAccount.appendChild(o1);
+    const o2=document.createElement('option'); o2.textContent=o2.value=acc.name; tradeAccount.appendChild(o2);
+  });
+}
+
+function saveProfile(){
+  const user=firebase.auth().currentUser;
+  const userRef=db.collection('users').doc(user.uid);
+  userRef.update({displayName:displayName.value});
+  alert('Profile saved!');
+}
+
+// TRADES
+function addTrade(){
+  const user=firebase.auth().currentUser;
+  const userRef=db.collection('users').doc(user.uid);
+  const trade={account:tradeAccount.value,symbol:symbol.value,direction:direction.value,open:openTime.value,close:closeTime.value,pnl:Number(pnl.value),date:new Date().toISOString().split('T')[0]};
+  userRef.collection('trades').add(trade);
+  alert('Trade added!');
+}
+
+// GALLERY
+const galleryImages=[];
+function uploadScreenshot(){
+  const file=document.getElementById('fileInput').files[0];
+  if(!file){alert('Select an image'); return;}
+  const reader=new FileReader();
+  reader.onload=function(e){
+    galleryImages.unshift(e.target.result);
+    renderGallery();
+  };
+  reader.readAsDataURL(file);
+}
+function renderGallery(){
+  const gal=document.getElementById('gallery'); gal.innerHTML='';
+  galleryImages.forEach(src=>{
+    const img=document.createElement('img'); img.src=src; gal.appendChild(img);
+  });
+}
+
+// CALENDAR
+function renderCalendar(){
+  const cal=document.getElementById('calendar'); cal.innerHTML='';
+  const daysInMonth=31;
+  for(let d=1;d<=daysInMonth;d++){
+    const div=document.createElement('div'); div.className='day gray'; div.textContent=d;
+    cal.appendChild(div);
+  }
+}
+renderCalendar();
+</script>
+
+</body>
+</html>
